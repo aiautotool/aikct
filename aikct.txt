@@ -1,0 +1,296 @@
+<?php
+class gpt35 {
+     public $name = 'Gpt-3.5';
+    private $apiUrl = 'https://tools.originality.ai/tool-ai-prompt-generator/backend/generate.php';
+    private $headers = [
+        'accept: */*',
+        'accept-language: en-US,en;q=0.9,vi;q=0.8',
+        'content-type: application/json',
+        'origin: https://tools.originality.ai',
+        'priority: u=1, i',
+        'referer: https://tools.originality.ai/tool-ai-prompt-generator/',
+        'sec-ch-ua: "Not)A;Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"',
+        'sec-ch-ua-mobile: ?0',
+        'sec-ch-ua-platform: "macOS"',
+        'sec-fetch-dest: empty',
+        'sec-fetch-mode: cors',
+        'sec-fetch-site: same-origin',
+        'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36'
+    ];
+
+    public function ai($title) {
+        $msg = '';
+        $postData = json_encode(['prompt' => "\n $title"]);
+
+        $ch = curl_init($this->apiUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $this->headers);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+
+        $response = curl_exec($ch);
+
+        if (curl_errno($ch)) {
+            curl_close($ch);
+            return ['error' => 'Request Error: ' . curl_error($ch)];
+        }
+
+        curl_close($ch);
+        $kq = json_decode($response, true);
+        $Parsedown = new Parsedown();
+        $html = $Parsedown->text($kq['output']);
+       
+        return ['output' => $html,'token'=>'','msg' => $msg,'model'=>$this->name];
+       
+    }
+}
+
+class gpt4o
+{
+    private $url;
+    private $headers;
+    private $postData;
+    public $ai_chat_token = 'kct_ai_chat_token';
+    public $name = 'Gpt-4o';
+    public function __construct()
+    {
+        $this->url = 'https://openai.ai-demo-proxy.tiny.cloud/v1/chat/completions';
+        $this->getToken();
+        $this->headers = [
+            'accept: text/event-stream',
+            'accept-language: en-US,en;q=0.9,vi;q=0.8',
+            'content-type: application/json',
+            'origin: https://www.tiny.cloud',
+            'priority: u=1, i',
+            'referer: https://www.tiny.cloud/',
+            'sec-ch-ua: "Not)A;Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"',
+            'sec-ch-ua-mobile: ?0',
+            'sec-ch-ua-platform: "macOS"',
+            'sec-fetch-dest: empty',
+            'sec-fetch-mode: cors',
+            'sec-fetch-site: same-site',
+            'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36'
+        ];
+
+        
+    }
+    private function getToken()
+    {
+        $token = get_option($this->ai_chat_token);
+
+        if (!$token) {
+            $token = file_get_contents('https://raw.githubusercontent.com/aiautotool/aikct/main/token.txt');
+            if ($token) {
+                update_option($this->ai_chat_token, trim($token));
+            } else {
+                return null;
+            }
+        }
+
+        return $token;
+    }
+
+    private function refreshToken()
+    {
+        $token = file_get_contents('https://raw.githubusercontent.com/aiautotool/aikct/main/token.txt');
+        if ($token) {
+            update_option($this->ai_chat_token, trim($token));
+        }
+        return $token;
+    }
+    public function sendRequest($prompt)
+    {
+        $token = $this->getToken();
+        if (!$token) {
+            return json_encode(['error' => 'Unable to retrieve token']);
+        }
+
+        $this->headers[] = "authorization: Bearer $token";
+
+        $this->postData = json_encode([
+            'model' => 'gpt-4o',
+            'temperature' => 0.8,
+            'max_tokens' => 4000,
+            'messages' => [
+                ['role' => 'system', 'content' => 'Answer the question based on the context below.'],
+                ['role' => 'system', 'content' => 'The response should be in markdown format.'],
+                ['role' => 'system', 'content' => 'The response should preserve any markdown formatting, links, and styles in the context.'],
+                ['role' => 'user', 'content' => $prompt]
+            ],
+            'stream' => false
+        ]);
+        $ch = curl_init($this->url);
+
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $this->headers);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $this->postData);
+
+        $response = curl_exec($ch);
+
+        if (curl_errno($ch)) {
+            return json_encode(['error' => curl_error($ch)]);
+        }
+
+        curl_close($ch);
+
+        $responseData = json_decode($response, true);
+        $content = $responseData['choices'][0]['message']['content'] ?? null;
+        $msg='';
+        if ($content === null) {
+            $this->refreshToken();
+            $msg = 'Token refreshed due to null content';
+        }
+        $Parsedown = new Parsedown();
+        $html = $Parsedown->text($content);
+        return ['output' => $html,'token'=>$token,'msg' => $msg,'model'=>$this->name];
+    }
+}
+
+
+
+class Gemini
+{
+    private $apiKey;
+    private $apiUrl;
+    private $headers;
+    private $postData;
+
+    public function __construct()
+    {
+        $this->apiKey = $this->getApiKey();
+        $this->apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=' . $this->apiKey;
+
+        $this->headers = [
+            'Content-Type: application/json'
+        ];
+    }
+
+    private function getApiKey()
+    {
+        $apiKey = get_option('gemini_api_key');
+
+        if (!$apiKey) {
+            $apiKey = file_get_contents('https://raw.githubusercontent.com/aiautotool/aikct/main/gemini.txt');
+            if ($apiKey) {
+                update_option('gemini_api_key', trim($apiKey));
+            } else {
+                return null;
+            }
+        }
+
+        return trim($apiKey);
+    }
+
+    private function refreshApiKey()
+    {
+        $apiKey = file_get_contents('https://raw.githubusercontent.com/aiautotool/aikct/main/gemini.txt');
+        if ($apiKey) {
+            update_option('gemini_api_key', trim($apiKey));
+            $this->apiKey = trim($apiKey);
+            $this->headers['Authorization'] = 'Bearer ' . $this->apiKey;
+        }
+        return $this->apiKey;
+    }
+
+    public function sendRequest($prompt)
+    {
+        $data = [
+            'contents' => [
+                [   'role'=>'user',
+                    'parts' => [
+                        [
+                            'text' => $prompt
+                        ]
+                    ]
+                ]
+            ],
+            'safetySettings' => [
+                    [
+                        'category'=>'HARM_CATEGORY_HARASSMENT',
+                        'threshold'=> 'BLOCK_NONE',
+                    ],
+                    [
+                        'category'=> 'HARM_CATEGORY_HATE_SPEECH',
+                        'threshold'=> 'BLOCK_NONE',
+                    ],
+                    [
+                        'category'=> 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                        'threshold'=> 'BLOCK_NONE',
+                    ],
+                    [
+                        'category'=> 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                        'threshold'=> 'BLOCK_NONE',
+                    ],
+            ]
+        ];
+
+        $ch = curl_init($this->apiUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $this->headers);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($httpCode == 200) {
+            $responseData = json_decode($response, true);
+            if (is_array($responseData) || is_object($responseData)) {
+            
+            if (is_object($responseData)) {
+                $responseData = (array) $responseData;
+            }
+            
+            $content = $responseData['candidates'][0]['content']['parts'][0]['text'] ?? null;
+            $msg = '';
+
+            if ($content === null) {
+                $this->refreshApiKey();
+                $msg = 'Content was null, token refreshed';
+            }
+            $Parsedown = new Parsedown();
+            $html = $Parsedown->text($content);
+            return [
+                'output' => $html,
+                'token' => $this->apiKey,
+                'msg' => $msg,
+                'model' => 'Gemini'
+            ];
+        } else {
+            return ['error' => 'Unexpected response format'];
+        }
+        } else {
+            return ['error' => "Error $httpCode: $response"];
+        }
+    }
+}
+
+
+class kctaiproxy {
+    private $instances;
+
+    public function __construct() {
+        
+        $this->instances = [
+            new gpt35(),
+            new gpt4o(),
+            new Gemini()
+        ];
+    }
+
+    public function sendRequest($prompt) {
+        $randomInstance = $this->instances[array_rand($this->instances)];
+        if ($randomInstance instanceof gpt35) {
+            return $randomInstance->ai($prompt);
+        } elseif ($randomInstance instanceof gpt4o) {
+            return $randomInstance->sendRequest($prompt);
+        }elseif ($randomInstance instanceof Gemini) {
+            return $randomInstance->sendRequest($prompt);
+        }
+        return ['error' => 'Invalid instance selected'];
+    }
+}
+
+?>
